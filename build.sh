@@ -1,28 +1,35 @@
 #!/bin/bash
 
-V_IPSET_NAME=CHINA:CIDR
+# 在OpenWrt的防火墙 - 自定义规则添加
+# iptables -I INPUT -4 -m set --match-set china_ips src -j ACCEPT
+# iptables -A INPUT -4 -j DROP
 
-# 安装ipset
-sudo apt-get update
-sudo apt-get install -y ipset
+#添加集合
+#ipset create china_ips hash:net
 
-# 创建目录
-mkdir -p dist
+
+#URL="https://raw.githubusercontent.com/Hackl0us/GeoIP2-CN/release/CN-ip-cidr.txt"
+URL="https://cdn.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/CN-ip-cidr.txt"
+V_IPSET_NAME=china_ips
+DESTINATION="/root"
+
 
 # 下载中国IP段数据
-curl -LR -o dist/CN-ip-cidr.txt "https://github.com/Hackl0us/GeoIP2-CN/raw/release/CN-ip-cidr.txt"
+curl -LR -f -o "$DESTINATION/CN-ip-cidr.txt" "$URL"
+if [ $? -ne 0 ]; then
+        echo "$(date +"%Y-%m-%d %H:%M:%S") - 下载URL失败" >> $DESTINATION/log
+        exit 1
+fi
+# 清空现有的ipset集合
+ipset flush china_ips
 
-# 创建ipset集合
-sudo ipset create $V_IPSET_NAME hash:net hashsize 2048 maxelem 1000000
+# 添加自定义规则
+#ipset add china_ips 192.168.xx.xx/24
 
-for item in $(cat dist/CN-ip-cidr.txt); do
-    sudo ipset add $V_IPSET_NAME $item
-done
 
-# 转储ipset文件
-sudo ipset save $V_IPSET_NAME > dist/china_cidr_ipset.txt
+# 将新的IP地址导入到ipset集合
+while read -r line; do
+    ipset add $V_IPSET_NAME $line
+done < ~/CN-ip-cidr.txt
 
-# 去掉bucketsize尾巴(有些Linux版本不兼容)
-V_STR=$(head -n1 dist/china_cidr_ipset.txt)
-V_STR=$(echo $V_STR | sed 's/ bucketsize [0-9]* initval 0x[0-9a-f]*//')
-$(sed -i "1s/.*/$V_STR/" dist/china_cidr_ipset.txt)
+echo "$(date +"%Y-%m-%d %H:%M:%S") - 更新规则成功"
